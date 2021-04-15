@@ -1,0 +1,123 @@
+- hosts: all
+  vars_files:
+  - hadoop_var.yml
+  tasks:
+  - name: " Create mount point directory for cdrom"
+    file:
+      state: directory
+      path: "{{ dvd_dir }}"
+
+  - name: "Mounting directory"
+    mount:
+      src: "/dev/cdrom"
+      path: "{{ dvd_dir }}"
+      state: mounted
+      fstype: "iso9660"
+
+  - name: "Adding AppStream to yum conf file"
+    yum_repository:
+      baseurl: "{{ dvd_dir }}/AppStream"
+      name: "Mydvd1"
+      description: "Myyum dvd1"
+      gpgcheck: no
+
+  - name: "Adding BaseOS to yum conf file"
+    yum_repository:
+      baseurl: "{{ dvd_dir }}/BaseOS"
+      name: "Mydvd2"
+      description: "Myyum dvd2"
+      gpgcheck: no
+
+  - name: "Copying JDk"
+    copy:
+      src: "/root/jdk-8u171-linux-x64.rpm"
+      dest: "/root"
+
+  - name: "Copying Hadoop"
+    copy:
+      src: "/root/hadoop-1.2.1-1.x86_64.rpm"
+      dest: "/root"
+
+  - name: "Installing Jdk"
+    yum:
+      state: present
+      name: "jdk-8u171-linux-x64.rpm"
+      disable_gpg_check: yes
+
+  - name: "Checking if hadoop is installed"
+    command: "hadoop version"
+    register: status
+    ignore_errors: yes
+
+  - name: "Installing Hadoop"
+    command: "rpm -ivh hadoop-1.2.1-1.x86_64.rpm --force"
+    when: status.rc!=0
+
+- hosts: Master
+  vars_files:
+  - hadoop_var.yml
+  tasks:
+  - name: "Creating a directory for Master node"
+    file:
+      state: directory
+      path: "{{ nn_dir }}"
+
+  - name: "Transfering 'hdfs-site.xml' to Master"
+    template:
+      dest: "/etc/hadoop/hdfs-site.xml"
+      src: "hdfs-master.xml"
+
+  - name: "Transfering 'core-site.xml' to Master"
+    template:
+      dest: "/etc/hadoop/core-site.xml"
+      src: "core-master.xml"
+
+  - name: "Adding firewall rule"
+    ansible.posix.firewalld:
+      port: "{{ port_no }}/tcp"
+      state: enabled
+      permanent: yes
+      immediate: yes
+
+  - name: "Asking user whether to format"
+    pause:
+      prompt: "Do you want Format Name node (y/n)"
+    register: value
+
+  - name: "Formatting Name Node's folder"
+    shell: "echo Y | hadoop namenode -format"
+    when: value.user_input == 'y'
+
+  - name: "Starting service"
+    command: "hadoop-daemon.sh start namenode"
+
+- hosts: Slave
+  vars_files:
+  - hadoop_var.yml
+  tasks:
+  - name: "Creating a directory for Slave node"
+    file:
+      state: directory
+      path: "{{ dn_dir }}"
+
+  - name: "Transfering 'hdfs-site.xml' to Slave node"
+    template:
+      dest: "/etc/hadoop/hdfs-site.xml"
+      src: "hdfs-slave.xml"
+
+  - name: "Transfering 'core-site.xml' to Slave node"
+    template:
+      dest: "/etc/hadoop/core-site.xml"
+      src: "core-slave.xml"
+
+  - name: "Adding firewall rule"
+    ansible.posix.firewalld:
+      port: "{{ port_no }}/tcp"
+      state: enabled
+      permanent: yes
+      immediate: yes
+
+  - name: "Starting service"
+    command: "hadoop-daemon.sh start datanode"
+                                      
+
